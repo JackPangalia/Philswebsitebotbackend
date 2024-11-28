@@ -487,8 +487,8 @@ Desired Output
 
 
 // Add these after other const declarations
-// const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes in milliseconds
-const SESSION_TIMEOUT = 20 * 1000
+const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes in milliseconds
+// const SESSION_TIMEOUT = 20 * 1000
 const sessions = new Map();
 
 // Add this function to manage sessions
