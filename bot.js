@@ -15,12 +15,11 @@ dotenv.config();
 
 // Create an Express app
 const app = express();
-const port = 3000;
 
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://127.0.0.1:5500",
+    origin: "https://jackpangalia.github.io/Philswebsitebot",
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"],
     credentials: true,
@@ -643,6 +642,7 @@ io.on("connection", (socket) => {
 
 //! ----- (ABOVE) SOCKET.IO CODE RELATED TO GENERATING THE RESPONSE AND STREAMING THE RESPONE BACK TO THE FROTNEND ------- !//
 // Start the server
-server.listen(port, () => {
-  console.log(`Server running on http://localhost:3000`);
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });
