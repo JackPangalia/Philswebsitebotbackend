@@ -19,14 +19,18 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "https://jackpangalia.github.io/Philswebsitebot",
+    origin: ["https://jackpangalia.github.io", "https://jackpangalia.github.io/Philswebsitebot"],
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"],
     credentials: true,
   },
 });
 
-app.use(cors());
+// Apply global CORS settings for Express
+app.use(cors({
+  origin: ["https://jackpangalia.github.io", "https://jackpangalia.github.io/Philswebsitebot"],
+  credentials: true,
+}));
 
 // Define the openai client
 const openai = new OpenAI({
