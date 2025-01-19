@@ -3,7 +3,7 @@
   "name": "philswebsitebotbackend",
   "version": "1.0.0",
   "description": "The backend repo for phils bot",
-  "main": "bot.js",
+  "main": "node server.js",
   "scripts": {
     "start": "node bot.js",
     "test": "echo \"Error: no test specified\" && exit 1"
