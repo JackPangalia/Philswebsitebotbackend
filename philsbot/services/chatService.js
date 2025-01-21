@@ -71,6 +71,8 @@ Third Reply: Independent of the original context about real estate, the realtor,
     return completions.choices[0].message.content;
   }
 
+  // async generateSmarReply function (add back later)
+
   setupSocketHandlers(socket) {
     let sessionId = null;
 
