@@ -19,6 +19,7 @@ const corsOptions = {
     'https://jackpangalia.github.io',
     'https://jackpangalia.github.io/Philswebsitebot',
     'http://127.0.0.1:5500',
+    'http://localhost:5173'
   ],
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type'],

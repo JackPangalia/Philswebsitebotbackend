@@ -45,34 +45,7 @@ export class ChatService {
     }
     this.sessions.delete(sessionId);
   }
-
-  async generateSmartReply(message) {
-    const completions = await this.openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      max_tokens: 150,
-      temperature: 0.1,
-      messages: [
-        {
-          role: 'system',
-          content: `Generate a JSON object containing three (4 to 6 word) suggested questions (smart replies) based on the provided message.
-
-Rules for the Smart Replies:
-First Reply: Closely related to the subject and specific content of the provided message.
-Second Reply: Related to the subject but explores a broader angle.
-Third Reply: Independent of the original context about real estate, the realtor, or services.`,
-        },
-        {
-          role: 'user',
-          content: message,
-        },
-      ],
-    });
-
-    return completions.choices[0].message.content;
-  }
-
-  // async generateSmarReply function (add back later)
-
+  
   setupSocketHandlers(socket) {
     let sessionId = null;
 
@@ -147,8 +120,6 @@ Third Reply: Independent of the original context about real estate, the realtor,
           })
           .on('end', async () => {
             socket.emit('responseComplete');
-            const quickReplyJSON = await this.generateSmartReply(fullResponse);
-            socket.emit('quickReplies', quickReplyJSON);
 
             session.timeoutId = setTimeout(
               () => this.cleanupSession(sessionId),
