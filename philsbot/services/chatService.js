@@ -1,158 +1,191 @@
 import { v4 as uuidv4 } from 'uuid';
 
-export class ChatService {
-  constructor(openai, io) {
-    this.openai = openai;
-    this.io = io;
-    this.sessions = new Map();
-    this.assistant = null;
-    this.SESSION_TIMEOUT = 30 * 60 * 1000;
-    this.ASSISTANT_ID = 'asst_bwx7JzTMDI0T8Px1cgnzNh8a';
-  }
+// Session timeout in milliseconds (30 minutes)
+const SESSION_TIMEOUT = 30 * 60 * 1000;
+// ID of the OpenAI assistant to use
+const ASSISTANT_ID = 'asst_bwx7JzTMDI0T8Px1cgnzNh8a';
 
-  async retrieveAssistant() {
-    try {
-      if (!this.assistant) {
-        this.assistant = await this.openai.beta.assistants.retrieve(this.ASSISTANT_ID);
-        console.log('Assistant retrieved');
-      }
-    } catch (error) {
-      console.error('Error retrieving Assistant:', error);
+// Variables to hold OpenAI and Socket.IO instances
+let openai;
+let io;
+// Map to store active chat sessions, keyed by session ID
+const sessions = new Map();
+// Variable to store the retrieved OpenAI assistant object
+let assistant = null;
+
+/**
+ * Retrieves the OpenAI assistant object.
+ */
+async function retrieveAssistant() {
+  try {
+    if (!assistant) {
+      // If the assistant hasn't been retrieved yet, fetch it from OpenAI
+      assistant = await openai.beta.assistants.retrieve(ASSISTANT_ID);
+      console.log('Assistant retrieved');
     }
-  }
-
-  createSession() {
-    const sessionId = uuidv4();
-    const session = {
-      threadId: null,
-      lastActive: Date.now(),
-      timeoutId: null,
-    };
-    this.sessions.set(sessionId, session);
-    return sessionId;
-  }
-
-  async cleanupSession(sessionId) {
-    const session = this.sessions.get(sessionId);
-    if (session?.threadId) {
-      try {
-        await this.openai.beta.threads.del(session.threadId);
-        console.log(`Thread ${session.threadId} deleted for session ${sessionId}`);
-        this.io.emit('clear_chat', { sessionId });
-      } catch (error) {
-        console.error(`Error deleting thread for session ${sessionId}:`, error);
-      }
-    }
-    this.sessions.delete(sessionId);
-  }
-  
-  setupSocketHandlers(socket) {
-    let sessionId = null;
-
-    socket.on('init_session', () => {
-      console.log('New session created');
-      sessionId = this.createSession();
-      socket.emit('session_created', { sessionId });
-    });
-
-    socket.on('resume_session', (data) => {
-      if (data.sessionId && this.sessions.has(data.sessionId)) {
-        sessionId = data.sessionId;
-        const session = this.sessions.get(sessionId);
-        this.refreshSession(session, sessionId);
-      } else {
-        sessionId = this.createSession();
-        socket.emit('session_created', { sessionId });
-      }
-    });
-
-    socket.on('send_prompt', async (data) => {
-      if (!sessionId || !this.sessions.has(sessionId)) {
-        socket.emit('error', { message: 'Invalid session' });
-        return;
-      }
-
-      const session = this.sessions.get(sessionId);
-      this.refreshSession(session, sessionId);
-
-      let fullResponse = '';
-
-      try {
-        await this.retrieveAssistant();
-
-        if (!session.threadId) {
-          const thread = await this.openai.beta.threads.create();
-          session.threadId = thread.id;
-        }
-
-        await this.openai.beta.threads.messages.create(session.threadId, {
-          role: 'user',
-          content: data.prompt,
-        });
-
-        this.openai.beta.threads.runs
-          .stream(session.threadId, {
-            assistant_id: this.assistant.id,
-          })
-          .on('textCreated', (text) => {
-            socket.emit('textCreated', text);
-          })
-          .on('textDelta', (textDelta, snapshot) => {
-            fullResponse += textDelta.value;
-            socket.emit('textDelta', { textDelta, snapshot });
-          })
-          .on('toolCallCreated', (toolCall) => {
-            socket.emit('toolCallCreated', toolCall);
-          })
-          .on('toolCallDelta', (toolCallDelta, snapshot) => {
-            if (toolCallDelta.type === 'code_interpreter') {
-              if (toolCallDelta.code_interpreter.input) {
-                socket.emit('codeInterpreterInput', toolCallDelta.code_interpreter.input);
-              }
-              if (toolCallDelta.code_interpreter.outputs) {
-                toolCallDelta.code_interpreter.outputs.forEach((output) => {
-                  if (output.type === 'logs') {
-                    socket.emit('codeInterpreterLogs', output.logs);
-                  }
-                });
-              }
-            }
-          })
-          .on('end', async () => {
-            socket.emit('responseComplete');
-
-            session.timeoutId = setTimeout(
-              () => this.cleanupSession(sessionId),
-              this.SESSION_TIMEOUT
-            );
-          });
-      } catch (error) {
-        console.error('Error processing prompt:', error);
-        socket.emit('error', { message: 'Error processing your request' });
-      }
-    });
-
-    socket.on('disconnect', () => {
-      if (sessionId) {
-        const session = this.sessions.get(sessionId);
-        if (session) {
-          session.timeoutId = setTimeout(
-            () => this.cleanupSession(sessionId),
-            this.SESSION_TIMEOUT
-          );
-        }
-      }
-    });
-  }
-
-  refreshSession(session, sessionId) {
-    session.lastActive = Date.now();
-    if (session.timeoutId) {
-      clearTimeout(session.timeoutId);
-    }
-    session.timeoutId = setTimeout(
-      () => this.cleanupSession(sessionId),
-      this.SESSION_TIMEOUT
-    );
+  } catch (error) {
+    console.error('Error retrieving Assistant:', error);
   }
 }
+
+/**
+ * Creates a new chat session and returns its ID.
+ * @returns {string} The ID of the new session.
+ */
+function createSession() {
+  // Generate a unique session ID
+  const sessionId = uuidv4();
+  // Create a session object with initial values
+  const session = {
+    threadId: null, // OpenAI thread ID, initialized to null
+    lastActive: Date.now(), // Timestamp of the last activity
+    timeoutId: null, // Timeout ID for session cleanup
+  };
+  // Store the session in the sessions map
+  sessions.set(sessionId, session);
+  return sessionId;
+}
+
+/**
+ * Cleans up a chat session, deleting the associated OpenAI thread and emitting a clear_chat event.
+ * @param {string} sessionId The ID of the session to clean up.
+ */
+async function cleanupSession(sessionId) {
+  const session = sessions.get(sessionId);
+  if (session?.threadId) {
+    try {
+      // Delete the OpenAI thread associated with the session
+      await openai.beta.threads.del(session.threadId);
+      console.log(`Thread ${session.threadId} deleted for session ${sessionId}`);
+      // Emit a clear_chat event to the client
+      io.emit('clear_chat', { sessionId });
+    } catch (error) {
+      console.error(`Error deleting thread for session ${sessionId}:`, error);
+    }
+  }
+  // Remove the session from the sessions map
+  sessions.delete(sessionId);
+}
+
+/**
+ * Refreshes the last activity timestamp of a session and resets its timeout.
+ * @param {object} session The session object.
+ * @param {string} sessionId The ID of the session.
+ */
+function refreshSession(session, sessionId) {
+  // Update the last activity timestamp
+  session.lastActive = Date.now();
+  // Clear any existing timeout
+  if (session.timeoutId) {
+    clearTimeout(session.timeoutId);
+  }
+  // Set a new timeout for session cleanup
+  session.timeoutId = setTimeout(() => cleanupSession(sessionId), SESSION_TIMEOUT);
+}
+
+/**
+ * Sets up Socket.IO event handlers for chat interactions.
+ * @param {Socket} socket The Socket.IO socket object.
+ * @param {OpenAI} openAiInstance The OpenAI client instance.
+ * @param {Server} ioInstance The Socket.IO server instance.
+ */
+function setupSocketHandlers(socket, openAiInstance, ioInstance) {
+  // Store OpenAI and Socket.IO instances
+  openai = openAiInstance;
+  io = ioInstance;
+  // Variable to store the current session ID for the socket
+  let sessionId = null;
+
+  // Event handler for initializing a new session
+  socket.on('init_session', () => {
+    console.log('New session created');
+    // Create a new session and emit the session ID to the client
+    sessionId = createSession();
+    socket.emit('session_created', { sessionId });
+  });
+
+  // Event handler for resuming an existing session
+  socket.on('resume_session', (data) => {
+    if (data.sessionId && sessions.has(data.sessionId)) {
+      // If the session exists, resume it
+      sessionId = data.sessionId;
+      const session = sessions.get(sessionId);
+      refreshSession(session, sessionId);
+    } else {
+      // If the session doesn't exist, create a new one
+      sessionId = createSession();
+      socket.emit('session_created', { sessionId });
+    }
+  });
+
+  // Event handler for sending a prompt to the OpenAI assistant
+  socket.on('send_prompt', async (data) => {
+    if (!sessionId || !sessions.has(sessionId)) {
+      // If the session is invalid, emit an error
+      socket.emit('error', { message: 'Invalid session' });
+      return;
+    }
+
+    const session = sessions.get(sessionId);
+    refreshSession(session, sessionId);
+
+    // Variable to store the full response from the assistant
+    let fullResponse = '';
+
+    try {
+      // Retrieve the OpenAI assistant
+      await retrieveAssistant();
+
+      if (!session.threadId) {
+        // If the session doesn't have a thread ID, create a new thread
+        const thread = await openai.beta.threads.create();
+        session.threadId = thread.id;
+      }
+
+      // Create a new message in the OpenAI thread
+      await openai.beta.threads.messages.create(session.threadId, {
+        role: 'user',
+        content: data.prompt,
+      });
+
+      // Stream the assistant's response
+      openai.beta.threads.runs
+        .stream(session.threadId, {
+          assistant_id: assistant.id,
+        })
+        .on('textCreated', (text) => {
+          // Emit textCreated events to the client
+          socket.emit('textCreated', text);
+        })
+        .on('textDelta', (textDelta, snapshot) => {
+          // Append the text delta to the full response and emit textDelta events
+          fullResponse += textDelta.value;
+          socket.emit('textDelta', { textDelta, snapshot });
+        })
+        .on('end', async () => {
+          // Emit responseComplete event to the client
+          socket.emit('responseComplete');
+          // Set a timeout for session cleanup
+          session.timeoutId = setTimeout(() => cleanupSession(sessionId), SESSION_TIMEOUT);
+        });
+    } catch (error) {
+      // Handle errors during prompt processing
+      console.error('Error processing prompt:', error);
+      socket.emit('error', { message: 'Error processing your request' });
+    }
+  });
+
+  // Event handler for socket disconnection
+  socket.on('disconnect', () => {
+    if (sessionId) {
+      const session = sessions.get(sessionId);
+      if (session) {
+        // Set a timeout for session cleanup when the socket disconnects
+        session.timeoutId = setTimeout(() => cleanupSession(sessionId), SESSION_TIMEOUT);
+      }
+    }
+  });
+}
+
+// Export the setupSocketHandlers function
+export { setupSocketHandlers };

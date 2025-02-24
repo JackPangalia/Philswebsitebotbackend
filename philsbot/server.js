@@ -5,7 +5,7 @@ import { Server } from 'socket.io';
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
 import cron from 'node-cron';
-import { ChatService } from './services/chatService.js';
+import { setupSocketHandlers } from './services/chatService.js'; // Updated import
 import { ScraperService } from './services/scraperService.js';
 
 dotenv.config();
@@ -38,17 +38,15 @@ const openai = new OpenAI({
 });
 
 // Initialize services
-const chatService = new ChatService(openai, io);
 const scraperService = new ScraperService(openai);
 
 // Setup Socket.IO connection handling
 io.on('connection', (socket) => {
   console.log('New client connected');
-  chatService.setupSocketHandlers(socket);
+  setupSocketHandlers(socket, openai, io); // Updated call
 });
 
 // Schedule daily scraping at 2 AM
-// 0 2 * * *
 cron.schedule('0 2 * * *', async () => {
   console.log('Running scheduled scraping task');
   await scraperService.scrapeAndUpdate();
