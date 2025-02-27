@@ -76,8 +76,11 @@ async function cleanupSession(sessionId) {
  * @returns {array} suggestionsArray. Array with the AI generated suggestions.
  */
 async function generateSuggestions(prompt, response) {
+  console.log("generating suggestions");
   try {
-    const suggestionPrompt = `Based on the user prompt: "${prompt}" and the assistant's response: "${response}", generate 3 short suggestion replies.`;
+    const suggestionPrompt = `Based on the user prompt: "${prompt}" and the assistatns's response: "${response}", generate 3, 5 to 10 word short suggestion replies. The First Reply: Closely related to the subject and specific content of the provided message. It should directly engage with or continue the conversation context.
+Second Reply: Related to the subject of the message but explores a broader or slightly different angle of the topic.
+Third Reply: Completely independent of the original context. It should be a general or exploratory question about real estate, the realtor, or services offered.`;
     const suggestionResponse = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages: [{ role: "user", content: suggestionPrompt }],
@@ -196,7 +199,7 @@ function setupSocketHandlers(socket, openAiInstance, ioInstance) {
           socket.emit("responseComplete");
           // Set a timeout for session cleanup
           try {
-            const suggestions = generateSuggestions(
+            const suggestions = await generateSuggestions(
               data.prompt,
               fullResponse
             ); // Call your suggestion generation function
